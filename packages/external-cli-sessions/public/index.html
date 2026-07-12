@@ -125,8 +125,18 @@
       const token = params.get('token') || localStorage.getItem('ext_sess_token') || '';
       if (params.get('token')) localStorage.setItem('ext_sess_token', params.get('token'));
 
+      // Support reverse-proxy under /external-cli/ (Caddy handle_path)
+      function apiBase() {
+        const p = location.pathname || '/';
+        if (p.includes('/external-cli')) {
+          return location.origin + '/external-cli';
+        }
+        return location.origin;
+      }
+
       function apiUrl(path) {
-        const u = new URL(path, location.origin);
+        const base = apiBase().replace(/\/$/, '');
+        const u = new URL(base + path, location.origin);
         if (token) u.searchParams.set('token', token);
         return u;
       }
