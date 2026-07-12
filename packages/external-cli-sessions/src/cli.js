@@ -41,7 +41,7 @@ Commands:
 
 Options:
   --limit N
-  --source all|claude|codex
+  --source all|claude|codex|grok
   --session-id UUID
   --cwd PATH
   --force
@@ -53,7 +53,8 @@ Options:
 
 Examples:
   node src/cli.js bind --source codex --session-id 019f... --cwd /path/to/project
-  node src/cli.js serve --port 18765
+  node src/cli.js bind --source grok --session-id 019f...
+  node src/cli.js serve --host 0.0.0.0 --port 18765
 `);
 }
 
@@ -87,8 +88,8 @@ function listCmd(args) {
 async function bindCmd(args) {
   const source = args.source;
   const sessionId = args.sessionId || args._[1];
-  if (!source || (source !== 'codex' && source !== 'claude')) {
-    console.error('bind requires --source codex|claude');
+  if (!source || !['codex', 'claude', 'grok'].includes(source)) {
+    console.error('bind requires --source codex|claude|grok');
     process.exit(1);
   }
   if (!sessionId) {

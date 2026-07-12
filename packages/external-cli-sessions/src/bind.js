@@ -1,5 +1,5 @@
 /**
- * Bind an external Claude/Codex CLI session into AionUi (shared session_id, not a copy).
+ * Bind an external Claude/Codex/Grok CLI session into AionUi (shared session_id, not a copy).
  *
  * Flow:
  *  1. POST /api/conversations  → new AionUi shell
@@ -20,6 +20,7 @@ const AGENT = {
     backend: 'codex',
     providerId: 'codex',
     agentSource: 'builtin',
+    createMode: 'assistant', // { assistant: { id } }
   },
   claude: {
     agentId: '2d23ff1c',
@@ -27,6 +28,16 @@ const AGENT = {
     backend: 'claude',
     providerId: 'claude',
     agentSource: 'builtin',
+    createMode: 'assistant',
+  },
+  // Custom ACP agent registered as "Grok Build" on this machine
+  grok: {
+    agentId: '8a0e0d1c',
+    assistantId: null,
+    backend: 'acp',
+    providerId: null,
+    agentSource: 'custom',
+    createMode: 'type_acp_custom',
   },
 };
 
@@ -112,8 +123,8 @@ export async function bindExternalSession(input) {
   const source = input.source;
   const sessionId = input.sessionId;
   if (!source || !sessionId) throw new Error('source and sessionId required');
-  if (source !== 'codex' && source !== 'claude') {
-    throw new Error(`Unsupported source: ${source} (PoC: codex|claude)`);
+  if (!AGENT[source]) {
+    throw new Error(`Unsupported source: ${source} (supported: codex|claude|grok)`);
   }
 
   const agent = AGENT[source];
@@ -144,21 +155,35 @@ export async function bindExternalSession(input) {
     (input.title && String(input.title).slice(0, 40)) ||
     `绑定·${source}·${short}`;
 
-  const created = await httpJson('POST', '/api/conversations', {
-    name,
-    assistant: { id: agent.assistantId },
-    extra: {
-      workspace,
-      custom_workspace: true,
-      backend: agent.backend,
-      agent_id: agent.agentId,
-      agent_source: agent.agentSource,
-      provider_id: agent.providerId,
-      external_session_id: sessionId,
-      bound_external_session: true,
-      bound_source: source,
-    },
-  });
+  const extra = {
+    workspace,
+    custom_workspace: true,
+    backend: agent.backend,
+    agent_id: agent.agentId,
+    agent_source: agent.agentSource,
+    external_session_id: sessionId,
+    bound_external_session: true,
+    bound_source: source,
+  };
+  if (agent.providerId) extra.provider_id = agent.providerId;
+
+  /** @type {Record<string, unknown>} */
+  let createBody;
+  if (agent.createMode === 'type_acp_custom') {
+    createBody = {
+      type: 'acp',
+      name,
+      extra,
+    };
+  } else {
+    createBody = {
+      name,
+      assistant: { id: agent.assistantId },
+      extra,
+    };
+  }
+
+  const created = await httpJson('POST', '/api/conversations', createBody);
 
   const conversationId = created.id;
   writeAcpSessionBinding(conversationId, sessionId, agent);

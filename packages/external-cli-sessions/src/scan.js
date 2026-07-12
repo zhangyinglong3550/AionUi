@@ -1,8 +1,9 @@
 /**
- * Scan Claude Code + Codex CLI session files on disk.
+ * Scan Claude Code / Codex / Grok CLI session files on disk.
  * Paths (defaults under $HOME):
  *   Claude: ~/.claude/projects/<cwd-encoded>/<sessionId>.jsonl
  *   Codex:  ~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl
+ *   Grok:   ~/.grok/sessions/<url-encoded-cwd>/<sessionId>/
  */
 
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ import os from 'node:os';
 
 /**
  * @typedef {Object} ExternalSession
- * @property {'claude'|'codex'} source
+ * @property {'claude'|'codex'|'grok'} source
  * @property {string} sessionId
  * @property {string} filePath
  * @property {string|null} cwd
@@ -275,7 +276,167 @@ export function scanCodexSessions(opts = {}) {
 }
 
 /**
- * @param {{ home?: string, limit?: number, source?: 'all'|'claude'|'codex' }} [opts]
+ * Decode Grok session parent dir (URL-encoded absolute path, e.g. %2FUsers%2F...).
+ * @param {string} name
+ */
+export function decodeGrokCwdDir(name) {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
+/**
+ * Summarize a Grok session directory.
+ * @param {string} sessionDir absolute path .../sessions/<cwdEnc>/<sessionId>
+ */
+export function summarizeGrokSessionDir(sessionDir) {
+  const sessionId = path.basename(sessionDir);
+  const cwdEnc = path.basename(path.dirname(sessionDir));
+  let cwd = decodeGrokCwdDir(cwdEnc);
+  let title = null;
+  let preview = null;
+  let mtimeMs = 0;
+  let sizeBytes = 0;
+  let fromAionUiHint = cwd.includes('.aionui') || cwd.includes('AionUi');
+
+  const summaryPath = path.join(sessionDir, 'summary.json');
+  if (fs.existsSync(summaryPath)) {
+    try {
+      const st = fs.statSync(summaryPath);
+      mtimeMs = Math.max(mtimeMs, st.mtimeMs);
+      sizeBytes += st.size;
+      const s = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+      if (s.info?.cwd) cwd = s.info.cwd;
+      if (s.info?.id) {
+        /* keep folder name as id */
+      }
+      title = s.generated_title || s.session_summary || null;
+      if (s.updated_at) {
+        const t = Date.parse(s.updated_at);
+        if (!Number.isNaN(t)) mtimeMs = Math.max(mtimeMs, t);
+      }
+      if (s.last_active_at) {
+        const t = Date.parse(s.last_active_at);
+        if (!Number.isNaN(t)) mtimeMs = Math.max(mtimeMs, t);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const chatPath = path.join(sessionDir, 'chat_history.jsonl');
+  if (fs.existsSync(chatPath)) {
+    try {
+      const st = fs.statSync(chatPath);
+      mtimeMs = Math.max(mtimeMs, st.mtimeMs);
+      sizeBytes += st.size;
+      const { tail } = readJsonlHeadTail(chatPath, 80);
+      for (const line of tail.reverse()) {
+        const o = tryParse(line);
+        if (!o) continue;
+        // user turns often store raw <user_query> text in content
+        if (o.type === 'user' || o.role === 'user') {
+          let c = o.content || o.text || '';
+          if (Array.isArray(c)) {
+            c = c.map((x) => (typeof x === 'string' ? x : x?.text || '')).join(' ');
+          }
+          if (typeof c === 'string' && c.trim()) {
+            const m = c.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
+            const text = (m ? m[1] : c).replace(/\s+/g, ' ').trim();
+            if (text) {
+              preview = text.slice(0, 160);
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!mtimeMs) {
+    try {
+      mtimeMs = fs.statSync(sessionDir).mtimeMs;
+    } catch {
+      mtimeMs = Date.now();
+    }
+  }
+
+  return {
+    sessionId,
+    cwd,
+    preview,
+    title: title || (preview ? preview.slice(0, 48) : sessionId.slice(0, 8)),
+    mtimeMs,
+    sizeBytes,
+    fromAionUiHint,
+  };
+}
+
+/**
+ * @param {{ home?: string, limit?: number }} [opts]
+ * @returns {ExternalSession[]}
+ */
+export function scanGrokSessions(opts = {}) {
+  const home = opts.home || homeDir();
+  const root = path.join(home, '.grok', 'sessions');
+  if (!fs.existsSync(root)) return [];
+
+  /** @type {ExternalSession[]} */
+  const sessions = [];
+  let cwdDirs;
+  try {
+    cwdDirs = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  for (const ent of cwdDirs) {
+    if (!ent.isDirectory()) continue;
+    if (ent.name === 'session_search.sqlite' || ent.name.endsWith('.sqlite')) continue;
+    const cwdPath = path.join(root, ent.name);
+    let sidDirs;
+    try {
+      sidDirs = fs.readdirSync(cwdPath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const sidEnt of sidDirs) {
+      if (!sidEnt.isDirectory()) continue;
+      // session ids look like UUIDs
+      if (!/^[0-9a-f-]{20,}$/i.test(sidEnt.name)) continue;
+      const sessionDir = path.join(cwdPath, sidEnt.name);
+      // must look like a session (has chat or summary)
+      if (
+        !fs.existsSync(path.join(sessionDir, 'summary.json')) &&
+        !fs.existsSync(path.join(sessionDir, 'chat_history.jsonl'))
+      ) {
+        continue;
+      }
+      const s = summarizeGrokSessionDir(sessionDir);
+      sessions.push({
+        source: 'grok',
+        sessionId: s.sessionId,
+        filePath: sessionDir,
+        cwd: s.cwd,
+        mtimeMs: s.mtimeMs,
+        sizeBytes: s.sizeBytes,
+        preview: s.preview,
+        title: s.title,
+        originator: null,
+        fromAionUiHint: s.fromAionUiHint,
+      });
+    }
+  }
+  sessions.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return typeof opts.limit === 'number' ? sessions.slice(0, opts.limit) : sessions;
+}
+
+/**
+ * @param {{ home?: string, limit?: number, source?: 'all'|'claude'|'codex'|'grok' }} [opts]
  */
 export function scanAllSessions(opts = {}) {
   const source = opts.source || 'all';
@@ -287,6 +448,9 @@ export function scanAllSessions(opts = {}) {
   if (source === 'all' || source === 'codex') {
     all = all.concat(scanCodexSessions({ home: opts.home }));
   }
+  if (source === 'all' || source === 'grok') {
+    all = all.concat(scanGrokSessions({ home: opts.home }));
+  }
   all.sort((a, b) => b.mtimeMs - a.mtimeMs);
   if (typeof opts.limit === 'number') all = all.slice(0, opts.limit);
   return all;
@@ -297,11 +461,13 @@ export function scanAllSessions(opts = {}) {
  * @param {ExternalSession} s
  */
 export function resumeCommand(s) {
+  const cwdPart = s.cwd ? `cd ${shellQuote(s.cwd)} && ` : '';
   if (s.source === 'claude') {
-    const cwdPart = s.cwd ? `cd ${shellQuote(s.cwd)} && ` : '';
     return `${cwdPart}claude --resume ${shellQuote(s.sessionId)}`;
   }
-  const cwdPart = s.cwd ? `cd ${shellQuote(s.cwd)} && ` : '';
+  if (s.source === 'grok') {
+    return `${cwdPart}grok --resume ${shellQuote(s.sessionId)}`;
+  }
   return `${cwdPart}codex resume ${shellQuote(s.sessionId)}`;
 }
 

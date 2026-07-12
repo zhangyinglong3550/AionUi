@@ -72,6 +72,7 @@
       }
       .b-claude { background: #3b2f1a; color: #f0c674; }
       .b-codex { background: #1a2e24; color: #7dcea0; }
+      .b-grok { background: #1a2233; color: #8ab4ff; }
       .b-ok { background: #163526; color: var(--ok); }
       .b-cli { background: #3a2a12; color: var(--warn); }
       .meta { color: var(--muted); font-size: 0.78rem; margin: 6px 0; word-break: break-all; }
@@ -112,6 +113,7 @@
           <option value="all">全部</option>
           <option value="claude">Claude</option>
           <option value="codex">Codex</option>
+          <option value="grok">Grok</option>
         </select>
         <button id="reload">刷新</button>
       </div>
@@ -152,7 +154,8 @@
           for (const s of data.sessions) {
             const el = document.createElement('article');
             el.className = 'card';
-            const badgeSrc = s.source === 'claude' ? 'b-claude' : 'b-codex';
+            const badgeSrc =
+              s.source === 'claude' ? 'b-claude' : s.source === 'grok' ? 'b-grok' : 'b-codex';
             const badgeMatch = s.aionui.canOpenInAionUi ? 'b-ok' : 'b-cli';
             const matchLabel = s.aionui.canOpenInAionUi ? '可在 AionUi 打开' : '仅 CLI';
             el.innerHTML = `

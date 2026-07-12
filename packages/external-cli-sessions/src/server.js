@@ -101,7 +101,9 @@ export function startServer(opts = {}) {
         ...s,
         resumeCommand: resumeCommand(s),
         mtime: new Date(s.mtimeMs).toISOString(),
-        canBind: !s.aionui.canOpenInAionUi && (s.source === 'codex' || s.source === 'claude'),
+        canBind:
+          !s.aionui.canOpenInAionUi &&
+          (s.source === 'codex' || s.source === 'claude' || s.source === 'grok'),
       }));
       return json(res, 200, {
         count: rows.length,

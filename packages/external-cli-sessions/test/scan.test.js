@@ -5,10 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   decodeClaudeProjectDir,
+  decodeGrokCwdDir,
   summarizeClaudeFile,
   summarizeCodexFile,
+  summarizeGrokSessionDir,
   scanClaudeSessions,
   scanCodexSessions,
+  scanGrokSessions,
   resumeCommand,
 } from '../src/scan.js';
 
@@ -72,6 +75,40 @@ describe('summarizeCodexFile', () => {
     assert.equal(s.cwd, '/Users/demo/code');
     assert.equal(s.fromAionUiHint, true);
     assert.match(s.preview || '', /debate/i);
+  });
+});
+
+describe('grok session summarize', () => {
+  it('decodes cwd and reads summary/title', () => {
+    assert.equal(decodeGrokCwdDir('%2FUsers%2Fdemo'), '/Users/demo');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-sess-'));
+    const gsid = '019f1111-2222-3333-4444-555555555555';
+    const dir = path.join(home, '.grok', 'sessions', encodeURIComponent('/Users/demo/app'), gsid);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'summary.json'),
+      JSON.stringify({
+        info: { id: gsid, cwd: '/Users/demo/app' },
+        generated_title: 'Demo Grok Session',
+        updated_at: '2026-07-12T10:00:00.000Z',
+      })
+    );
+    fs.writeFileSync(
+      path.join(dir, 'chat_history.jsonl'),
+      JSON.stringify({
+        type: 'user',
+        content: '<user_query>\nhello from grok fixture\n</user_query>',
+      }) + '\n'
+    );
+    const s = summarizeGrokSessionDir(dir);
+    assert.equal(s.sessionId, gsid);
+    assert.equal(s.cwd, '/Users/demo/app');
+    assert.equal(s.title, 'Demo Grok Session');
+    assert.match(s.preview || '', /hello from grok/i);
+
+    const listed = scanGrokSessions({ home, limit: 5 });
+    assert.ok(listed.some((x) => x.sessionId === gsid));
+    assert.match(resumeCommand(listed[0]), /grok --resume/);
   });
 });
 
