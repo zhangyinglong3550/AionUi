@@ -49,8 +49,65 @@ function dbPath() {
   return path.join(dataDir(), 'aionui-backend.db');
 }
 
+/**
+ * aioncore 每次启动用 --port 0，端口不固定。
+ * 优先环境变量；否则从最新日志 AIONCORE_LISTENING / lsof 发现。
+ */
+function discoverAionBase() {
+  if (process.env.AIONUI_BASE_URL) {
+    return process.env.AIONUI_BASE_URL.replace(/\/$/, '');
+  }
+
+  // 1) 日志：.../Library/Logs/AionUi/YYYY/MM/DD/YYYY-MM-DD.log
+  try {
+    const logRoot = path.join(os.homedir(), 'Library', 'Logs', 'AionUi');
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const candidates = [
+      path.join(logRoot, String(y), m, d, `${y}-${m}-${d}.log`),
+      path.join(logRoot, `${y}-${m}-${d}.log`),
+    ];
+    for (const logFile of candidates) {
+      if (!fs.existsSync(logFile)) continue;
+      // 读尾部避免大文件
+      const st = fs.statSync(logFile);
+      const fd = fs.openSync(logFile, 'r');
+      const size = Math.min(st.size, 256 * 1024);
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, Math.max(0, st.size - size));
+      fs.closeSync(fd);
+      const text = buf.toString('utf8');
+      const matches = [...text.matchAll(/AIONCORE_LISTENING\s*\{[^}]*"port"\s*:\s*(\d+)/g)];
+      if (matches.length) {
+        const port = matches[matches.length - 1][1];
+        return `http://127.0.0.1:${port}`;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 2) lsof：aioncore LISTEN
+  try {
+    const out = execFileSync(
+      'sh',
+      ['-c', "lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk '/aioncore/ && /LISTEN/ {print $9}' | tail -1"],
+      { encoding: 'utf8', timeout: 3000 }
+    ).trim();
+    const m = out.match(/:(\d+)\s*$/);
+    if (m) return `http://127.0.0.1:${m[1]}`;
+  } catch {
+    /* ignore */
+  }
+
+  // 3) 兼容旧默认（几乎总会失败，仅兜底）
+  return 'http://127.0.0.1:63695';
+}
+
 function aionBase() {
-  return (process.env.AIONUI_BASE_URL || 'http://127.0.0.1:63695').replace(/\/$/, '');
+  return discoverAionBase();
 }
 
 function webuiBase() {
@@ -58,12 +115,20 @@ function webuiBase() {
 }
 
 async function httpJson(method, urlPath, body) {
-  const url = `${aionBase()}${urlPath}`;
-  const res = await fetch(url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const base = aionBase();
+  const url = `${base}${urlPath}`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new Error(
+      `无法连接 aioncore (${base}${urlPath}): ${e.message || e}。请确认 Mac 上 AionUi 已打开；若刚重启过 App，再点一次绑定。`
+    );
+  }
   const text = await res.text();
   let data;
   try {

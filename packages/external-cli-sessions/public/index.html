@@ -206,8 +206,13 @@
                       title: s.preview || s.title,
                     }),
                   });
-                  const bj = await br.json();
-                  if (!bj.success) throw new Error(bj.error || 'bind failed');
+                  let bj;
+                  try {
+                    bj = await br.json();
+                  } catch {
+                    throw new Error(`绑定接口返回非 JSON（HTTP ${br.status}）。请检查 Mac 上 external-cli 服务是否在跑。`);
+                  }
+                  if (!br.ok || !bj.success) throw new Error(bj.error || bj.message || `bind failed HTTP ${br.status}`);
                   const open = bj.data.openUrl;
                   bindBtn.textContent = '已绑定';
                   if (open) {
