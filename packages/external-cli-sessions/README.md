@@ -11,7 +11,7 @@
 | 匹配 AionUi `acp_session.session_id` → 已有对话 | ✅ |
 | 打开 AionUi WebUI 对话（`/#/conversation/:id`） | ✅ 已匹配时 |
 | 生成终端 resume 命令 | ✅ 未匹配时 |
-| 把任意终端会话自动「导入」成全新 AionUi 会话并 ACP load | ⚠️ 需 aioncore 支持 `session/load` 外部 id；本 MVP 做绑定建议与命令，不写脏 DB |
+| **绑定共享**（建 conversation + `acp_session.session_id` = 外部 id + `session/load`） | ✅ Codex / Claude PoC（不复制 jsonl） |
 
 ## 快速开始
 
@@ -21,10 +21,23 @@ cd packages/external-cli-sessions
 # 列出最近会话
 node src/cli.js list --limit 30
 
+# 绑定一条「仅 CLI」会话到 AionUi（共享同一 session_id，不复制文件）
+node src/cli.js bind --source codex --session-id <UUID>
+
 # 启动本地 Web UI（手机经 Tailscale 访问时加 --host 0.0.0.0）
 node src/cli.js serve --port 18765
 # 浏览器打开 http://127.0.0.1:18765/?token=<启动时打印的 token>
+# 页面上对「仅 CLI」条目点「绑定到 AionUi（共享）」
 ```
+
+### 绑定原理
+
+1. `POST /api/conversations` 创建 AionUi 对话壳  
+2. 写 `acp_session.session_id = 外部 CLI session_id`（**共享**，不拷贝 jsonl）  
+3. `runtime/ensure` → ACP `session/load` 加载该 id  
+4. 打开 `/#/conversation/<新 id>` 继续聊  
+
+环境变量 `AIONUI_BASE_URL`（默认 `http://127.0.0.1:63695`）指向本机 aioncore。
 
 环境变量（可选）：
 

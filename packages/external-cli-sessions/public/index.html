@@ -176,6 +176,43 @@
               a.rel = 'noopener';
               a.textContent = '打开 AionUi 对话';
               actions.appendChild(a);
+            } else if (s.canBind) {
+              const bindBtn = document.createElement('button');
+              bindBtn.textContent = '绑定到 AionUi（共享）';
+              bindBtn.onclick = async () => {
+                bindBtn.disabled = true;
+                bindBtn.textContent = '绑定中…';
+                try {
+                  const br = await fetch(apiUrl('/api/bind'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      source: s.source,
+                      sessionId: s.sessionId,
+                      cwd: s.cwd,
+                      title: s.preview || s.title,
+                    }),
+                  });
+                  const bj = await br.json();
+                  if (!bj.success) throw new Error(bj.error || 'bind failed');
+                  const open = bj.data.openUrl;
+                  bindBtn.textContent = '已绑定';
+                  if (open) {
+                    const a = document.createElement('a');
+                    a.href = open;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.textContent = '打开 AionUi 对话';
+                    actions.insertBefore(a, bindBtn);
+                  }
+                  setTimeout(load, 800);
+                } catch (e) {
+                  bindBtn.disabled = false;
+                  bindBtn.textContent = '绑定失败，重试';
+                  alert(String(e.message || e));
+                }
+              };
+              actions.appendChild(bindBtn);
             }
             const copy = document.createElement('button');
             copy.className = 'secondary';

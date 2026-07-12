@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { scanAllSessions, resumeCommand } from './scan.js';
 import { loadAionUiSessionIndex, enrichWithAionUi } from './match-aionui.js';
+import { bindExternalSession } from './bind.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -20,6 +21,23 @@ function json(res, status, body) {
     'Cache-Control': 'no-store',
   });
   res.end(data);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 function text(res, status, body, type = 'text/plain; charset=utf-8') {
@@ -83,6 +101,7 @@ export function startServer(opts = {}) {
         ...s,
         resumeCommand: resumeCommand(s),
         mtime: new Date(s.mtimeMs).toISOString(),
+        canBind: !s.aionui.canOpenInAionUi && (s.source === 'codex' || s.source === 'claude'),
       }));
       return json(res, 200, {
         count: rows.length,
@@ -90,6 +109,24 @@ export function startServer(opts = {}) {
         matched: rows.filter((r) => r.aionui.canOpenInAionUi).length,
         sessions: rows,
       });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/bind') {
+      readBody(req)
+        .then(async (body) => {
+          const result = await bindExternalSession({
+            source: body.source,
+            sessionId: body.sessionId,
+            cwd: body.cwd,
+            title: body.title || body.preview,
+            force: !!body.force,
+          });
+          json(res, 200, { success: true, data: result });
+        })
+        .catch((e) => {
+          json(res, 400, { success: false, error: String(e.message || e) });
+        });
+      return;
     }
 
     return json(res, 404, { error: 'not found' });

@@ -17,8 +17,18 @@
 
 见 [packages/external-cli-sessions/README.md](../../packages/external-cli-sessions/README.md)。
 
+## 绑定（共享，不复制）
+
+```bash
+node src/cli.js bind --source codex --session-id <UUID>
+# 或 Web UI 点「绑定到 AionUi（共享）」
+```
+
+实现：创建 AionUi conversation → 写 `acp_session.session_id` → `runtime/ensure` 触发 ACP `session/load`。  
+已验证：load 后 `session_id` 保持为外部 id，与 `~/.codex/sessions` 同一会话。
+
 ## 后续（产品化）
 
-1. aioncore：支持创建 conversation 时传入外部 `session_id` 并走 `session/load`  
+1. aioncore 原生支持 create 时传入 `session_id`（免 sqlite 旁路写）  
 2. WebUI：会话列表增加「外部 CLI」分区  
 3. 手机：直接嵌进 WebUI 路由，无需独立 18765 端口  
