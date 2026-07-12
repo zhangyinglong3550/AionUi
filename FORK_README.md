@@ -2,10 +2,19 @@
 
 > 上游官方仓库：[iOfficeAI/AionUi](https://github.com/iOfficeAI/AionUi)  
 > 本 Fork：https://github.com/zhangyinglong3550/AionUi  
-> 功能分支：`feature/external-cli-session-browser`
+> 功能分支：`feature/external-cli-session-browser`  
+> **当前基底版本：官方 v2.1.33（aioncore v0.1.45）+ 本分支 CLI 会话能力**  
+> 最近一次 merge：`origin/main` → feature（2026-07-12，无冲突）
 
 本仓库在**官方 AionUi 基础上**增加「CLI 会话发现 / 绑定 / 手机远程」能力。  
 日常聊天仍走 AionUi 官方能力；会话复用是叠加层，通过 **merge 上游** 持续跟进官方更新。
+
+### 已知坑（已修）
+
+| 问题 | 原因 | 处理 |
+|------|------|------|
+| 点设置白屏卡死 | `BUILTIN_TAB_IDS` 含 `cli-sessions`，但 `SettingsPageWrapper` 导航 map 漏了该项 → `undefined.id` | 已在 Wrapper 注册 `cli-sessions` 并 filter 空项 |
+| 2.1.29 装到 2.1.33 库上迁移失败 | aioncore 降级，缺 migration 19/20 | 必须用 ≥2.1.33 基底 + 对应 aioncore 打包；勿只装旧 DMG |
 
 ---
 
