@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1d23" />
+    <title>外部 CLI 会话 · AionUi</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --card: #1a1d23;
+        --border: #2a2f3a;
+        --text: #e8eaed;
+        --muted: #9aa0a6;
+        --accent: #6c8cff;
+        --ok: #3dd68c;
+        --warn: #f5a524;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.45;
+      }
+      header {
+        padding: 16px 16px 8px;
+        position: sticky;
+        top: 0;
+        background: linear-gradient(180deg, #0f1115 70%, transparent);
+        z-index: 2;
+      }
+      h1 { font-size: 1.15rem; margin: 0 0 4px; font-weight: 650; }
+      .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+      input, select, button {
+        font: inherit;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        padding: 10px 12px;
+      }
+      input { flex: 1; min-width: 140px; }
+      button {
+        background: var(--accent);
+        border-color: transparent;
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary { background: #2a3140; }
+      button:disabled { opacity: 0.5; }
+      main { padding: 0 12px 40px; }
+      .stats { color: var(--muted); font-size: 0.8rem; margin: 0 4px 12px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .b-claude { background: #3b2f1a; color: #f0c674; }
+      .b-codex { background: #1a2e24; color: #7dcea0; }
+      .b-ok { background: #163526; color: var(--ok); }
+      .b-cli { background: #3a2a12; color: var(--warn); }
+      .meta { color: var(--muted); font-size: 0.78rem; margin: 6px 0; word-break: break-all; }
+      .preview { font-size: 0.92rem; margin: 8px 0; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      .actions a, .actions button {
+        text-decoration: none;
+        font-size: 0.88rem;
+        padding: 8px 12px;
+      }
+      .actions a {
+        background: var(--ok);
+        color: #062416;
+        border-radius: 10px;
+        font-weight: 700;
+      }
+      code {
+        font-size: 0.75rem;
+        background: #0b0d11;
+        padding: 8px;
+        border-radius: 8px;
+        display: block;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: #c8d1e0;
+      }
+      .err { color: #ff7b72; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>外部 CLI 会话</h1>
+      <div class="sub">扫描 Claude Code / Codex 磁盘会话，并匹配 AionUi 已有对话</div>
+      <div class="row">
+        <input id="q" placeholder="搜索 cwd / 预览 / session id" />
+        <select id="source">
+          <option value="all">全部</option>
+          <option value="claude">Claude</option>
+          <option value="codex">Codex</option>
+        </select>
+        <button id="reload">刷新</button>
+      </div>
+      <div class="stats" id="stats">加载中…</div>
+    </header>
+    <main id="list"></main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const token = params.get('token') || localStorage.getItem('ext_sess_token') || '';
+      if (params.get('token')) localStorage.setItem('ext_sess_token', params.get('token'));
+
+      function apiUrl(path) {
+        const u = new URL(path, location.origin);
+        if (token) u.searchParams.set('token', token);
+        return u;
+      }
+
+      async function load() {
+        const list = document.getElementById('list');
+        const stats = document.getElementById('stats');
+        list.innerHTML = '';
+        stats.textContent = '加载中…';
+        try {
+          const source = document.getElementById('source').value;
+          const q = document.getElementById('q').value.trim();
+          const u = apiUrl('/api/sessions');
+          u.searchParams.set('limit', '80');
+          u.searchParams.set('source', source);
+          if (q) u.searchParams.set('q', q);
+          const r = await fetch(u);
+          if (!r.ok) throw new Error(await r.text());
+          const data = await r.json();
+          stats.textContent = `共 ${data.count} 条 · 已匹配 AionUi ${data.matched} · WebUI ${data.webuiBase}`;
+          if (!data.sessions.length) {
+            list.innerHTML = '<div class="err">没有扫到会话。确认本机有 ~/.claude/projects 或 ~/.codex/sessions。</div>';
+            return;
+          }
+          for (const s of data.sessions) {
+            const el = document.createElement('article');
+            el.className = 'card';
+            const badgeSrc = s.source === 'claude' ? 'b-claude' : 'b-codex';
+            const badgeMatch = s.aionui.canOpenInAionUi ? 'b-ok' : 'b-cli';
+            const matchLabel = s.aionui.canOpenInAionUi ? '可在 AionUi 打开' : '仅 CLI';
+            el.innerHTML = `
+              <div>
+                <span class="badge ${badgeSrc}">${s.source}</span>
+                <span class="badge ${badgeMatch}">${matchLabel}</span>
+                ${s.fromAionUiHint ? '<span class="badge b-ok">origin AionUi</span>' : ''}
+              </div>
+              <div class="preview">${escapeHtml(s.preview || s.title || '(无预览)')}</div>
+              <div class="meta">${escapeHtml(new Date(s.mtimeMs).toLocaleString())}</div>
+              <div class="meta">id: ${escapeHtml(s.sessionId)}</div>
+              ${s.cwd ? `<div class="meta">cwd: ${escapeHtml(s.cwd)}</div>` : ''}
+              <div class="actions"></div>
+              <div class="cmd" style="margin-top:8px"></div>
+            `;
+            const actions = el.querySelector('.actions');
+            if (s.aionui.canOpenInAionUi && s.aionui.openUrl) {
+              const a = document.createElement('a');
+              a.href = s.aionui.openUrl;
+              a.target = '_blank';
+              a.rel = 'noopener';
+              a.textContent = '打开 AionUi 对话';
+              actions.appendChild(a);
+            }
+            const copy = document.createElement('button');
+            copy.className = 'secondary';
+            copy.textContent = '复制 resume 命令';
+            copy.onclick = async () => {
+              await navigator.clipboard.writeText(s.resumeCommand);
+              copy.textContent = '已复制';
+              setTimeout(() => (copy.textContent = '复制 resume 命令'), 1200);
+            };
+            actions.appendChild(copy);
+            el.querySelector('.cmd').innerHTML = `<code>${escapeHtml(s.resumeCommand)}</code>`;
+            list.appendChild(el);
+          }
+        } catch (e) {
+          stats.textContent = '';
+          list.innerHTML = `<div class="err">加载失败：${escapeHtml(String(e.message || e))}。请确认 URL 带正确 token。</div>`;
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      document.getElementById('reload').onclick = load;
+      document.getElementById('q').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') load();
+      });
+      document.getElementById('source').onchange = load;
+      load();
+    </script>
+  </body>
+</html>
