@@ -106,9 +106,42 @@ function getActionsArtifactMissingMessage({ runId, platform, arch, expectedArtif
   ].join(' ');
 }
 
+function copyManagedResourcesFromInstalledApp(bundleOut) {
+  const candidates = [
+    process.env.AIONUI_INSTALLED_MANAGED_RESOURCES,
+    path.join(
+      '/Applications/AionUi.app/Contents/Resources/bundled-aioncore',
+      `${process.platform === 'darwin' ? 'darwin' : process.platform}-${process.arch}`,
+      'managed-resources'
+    ),
+  ].filter(Boolean);
+
+  for (const src of candidates) {
+    if (!src || !fs.existsSync(src)) continue;
+    console.log(`  Falling back to installed managed-resources: ${src}`);
+    removeDirectorySafe(bundleOut);
+    ensureDirectory(path.dirname(bundleOut));
+    fs.cpSync(src, bundleOut, { recursive: true });
+    return true;
+  }
+  return false;
+}
+
 function prepareManagedResources(binaryPath, targetDir) {
   const bundleOut = path.join(targetDir, 'managed-resources');
   const dataDir = path.join(targetDir, '.prepare-data');
+
+  // Local fork packaging: skip network prepare when explicitly requested
+  // and reuse already-bundled or installed managed resources.
+  if (process.env.AIONUI_SKIP_MANAGED_PREPARE === '1') {
+    if (fs.existsSync(bundleOut) && fs.readdirSync(bundleOut).length > 0) {
+      console.log('  AIONUI_SKIP_MANAGED_PREPARE=1: reusing existing managed-resources');
+      return bundleOut;
+    }
+    if (copyManagedResourcesFromInstalledApp(bundleOut)) {
+      return bundleOut;
+    }
+  }
 
   removeDirectorySafe(bundleOut);
   removeDirectorySafe(dataDir);
@@ -116,13 +149,22 @@ function prepareManagedResources(binaryPath, targetDir) {
   ensureDirectory(dataDir);
 
   console.log(`  Preparing managed resources under ${path.relative(process.cwd(), bundleOut)}`);
-  execFileSync(binaryPath, ['--data-dir', dataDir, 'prepare-managed-resources', '--bundle-out', bundleOut], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      AIONUI_BUNDLED_MANAGED_RESOURCES: '',
-    },
-  });
+  try {
+    execFileSync(binaryPath, ['--data-dir', dataDir, 'prepare-managed-resources', '--bundle-out', bundleOut], {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        AIONUI_BUNDLED_MANAGED_RESOURCES: '',
+      },
+    });
+  } catch (err) {
+    console.warn('  prepare-managed-resources failed, trying installed app fallback…');
+    if (copyManagedResourcesFromInstalledApp(bundleOut)) {
+      removeDirectorySafe(dataDir);
+      return bundleOut;
+    }
+    throw err;
+  }
 
   removeDirectorySafe(dataDir);
   return bundleOut;
