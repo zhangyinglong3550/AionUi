@@ -14,7 +14,18 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 function Write-VerifyLog {
   param([string]$Message)
-  Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format o), $Message)
+  $payload = [ordered]@{
+    schemaVersion = 1
+    ts = (Get-Date -Format o)
+    session = ''
+    version = ''
+    arch = $RuntimeKey
+    updated = $false
+    instDir = $InstallDir
+    event = 'verify-bundled-aioncore'
+    message = $Message
+  }
+  Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value ($payload | ConvertTo-Json -Compress -Depth 8)
 }
 
 function ConvertTo-RelativeResourcePath {
@@ -98,6 +109,22 @@ function Read-JsonFile {
   }
 }
 
+function Get-CodexPlatformExecutable {
+  param([string]$RuntimeKey)
+
+  $vendorTriple = switch ($RuntimeKey) {
+    "win32-x64" { "x86_64-pc-windows-msvc" }
+    "win32-arm64" { "aarch64-pc-windows-msvc" }
+    default { "" }
+  }
+
+  if (-not $vendorTriple) {
+    return ""
+  }
+
+  return "node_modules\@openai\codex-$RuntimeKey\vendor\$vendorTriple\bin\codex.exe"
+}
+
 function Test-BundledResourcesOnce {
   $failures = [System.Collections.Generic.List[object]]::new()
   $runtimeParts = $RuntimeKey.Split('-', 2)
@@ -145,7 +172,7 @@ function Test-BundledResourcesOnce {
   $tools = @(
     @{
       id = 'codex-acp'
-      executable = "node_modules\@zed-industries\codex-acp-$RuntimeKey\bin\codex-acp.exe"
+      executable = (Get-CodexPlatformExecutable $RuntimeKey)
     },
     @{
       id = 'claude-agent-acp'

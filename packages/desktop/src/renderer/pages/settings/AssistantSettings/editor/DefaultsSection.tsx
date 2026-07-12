@@ -1,6 +1,7 @@
 import type { BuiltinAutoSkill, SkillInfo } from '../types';
 import type { IMcpServer } from '@/common/config/storage';
 import { Button, Select, Tooltip } from '@arco-design/web-react';
+import { Brain, Lightning, LinkCloud, Shield, Toolkit } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -33,12 +34,18 @@ type DefaultsSectionProps = {
   setDefaultPermissionMode: (value: 'auto' | 'fixed') => void;
   defaultPermissionValue: string;
   setDefaultPermissionValue: (value: string) => void;
+  defaultThoughtLevelMode: 'auto' | 'fixed';
+  setDefaultThoughtLevelMode: (value: 'auto' | 'fixed') => void;
+  defaultThoughtLevelValue: string;
+  setDefaultThoughtLevelValue: (value: string) => void;
   defaultSkillsMode: 'auto' | 'fixed';
   setDefaultSkillsMode: (value: 'auto' | 'fixed') => void;
   defaultMcpMode: 'auto' | 'fixed';
   setDefaultMcpMode: (value: 'auto' | 'fixed') => void;
   modelOptions: SelectOption[];
   permissionOptions: Array<{ value: string; label: string; description?: string }>;
+  showThoughtLevelDefault: boolean;
+  thoughtLevelOptions: Array<{ value: string; label: string; description?: string }>;
   editableSkillOptions: EditableSkillOption[];
   selectedSkillValues: string[];
   enabledMcpServers: IMcpServer[];
@@ -63,12 +70,18 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
   setDefaultPermissionMode,
   defaultPermissionValue,
   setDefaultPermissionValue,
+  defaultThoughtLevelMode,
+  setDefaultThoughtLevelMode,
+  defaultThoughtLevelValue,
+  setDefaultThoughtLevelValue,
   defaultSkillsMode,
   setDefaultSkillsMode,
   defaultMcpMode,
   setDefaultMcpMode,
   modelOptions,
   permissionOptions,
+  showThoughtLevelDefault,
+  thoughtLevelOptions,
   editableSkillOptions,
   selectedSkillValues,
   enabledMcpServers,
@@ -83,6 +96,10 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
   const navigate = useNavigate();
   const canEditDefaultModelAndPermission = !isReadOnlyAssistant || isBuiltin;
   const canEditDefaultSkillsAndMcps = !isReadOnlyAssistant;
+  const hasFixedThoughtLevelValue =
+    defaultThoughtLevelMode === 'fixed' &&
+    defaultThoughtLevelValue &&
+    thoughtLevelOptions.some((option) => option.value === defaultThoughtLevelValue);
 
   return (
     <SectionCard
@@ -95,7 +112,8 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
     >
       <div className='space-y-16px'>
         <ConfigRow
-          label={t('settings.assistantDefaultModelLabel', { defaultValue: 'Default Model' })}
+          icon={<LinkCloud theme='outline' size='14' />}
+          label={t('settings.assistantDefaultModelLabel', { defaultValue: 'Model' })}
           hint={t('settings.assistantDefaultConfigHint', {
             defaultValue:
               'Remember last used only takes effect after this assistant has recorded a previous selection.',
@@ -138,7 +156,10 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
           </Select>
         </ConfigRow>
 
-        <ConfigRow label={t('settings.assistantDefaultPermissionLabel', { defaultValue: 'Default Permission' })}>
+        <ConfigRow
+          icon={<Shield theme='outline' size='14' />}
+          label={t('settings.assistantDefaultPermissionLabel', { defaultValue: 'Permission' })}
+        >
           <Select
             key={`assistant-default-permission-${localeKey}-${defaultPermissionMode}`}
             getPopupContainer={getEditorSelectPopupContainer}
@@ -184,14 +205,57 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
           </Select>
         </ConfigRow>
 
+        {showThoughtLevelDefault ? (
+          <ConfigRow
+            icon={<Brain theme='outline' size='14' />}
+            label={t('settings.assistantDefaultThoughtLevelLabel', { defaultValue: 'Thought Level' })}
+          >
+            <Select
+              key={`assistant-default-thought-level-${localeKey}-${defaultThoughtLevelMode}`}
+              getPopupContainer={getEditorSelectPopupContainer}
+              value={hasFixedThoughtLevelValue ? defaultThoughtLevelValue : AUTO_SELECT_VALUE}
+              onChange={(value) => {
+                const nextValue = value as string;
+                if (nextValue === AUTO_SELECT_VALUE) {
+                  setDefaultThoughtLevelMode('auto');
+                  setDefaultThoughtLevelValue('');
+                  return;
+                }
+                setDefaultThoughtLevelMode('fixed');
+                setDefaultThoughtLevelValue(nextValue);
+              }}
+              disabled={!canEditDefaultModelAndPermission}
+              allowClear={false}
+              placeholder={t('settings.assistantSelectDefaultThoughtLevel', {
+                defaultValue: 'Select a thought level',
+              })}
+              data-testid='select-assistant-default-thought-level'
+            >
+              <Select.Option value={AUTO_SELECT_VALUE}>{autoDefaultOptionLabel}</Select.Option>
+              {thoughtLevelOptions.map((option) => (
+                <Select.Option key={`${localeKey}-${option.value}`} value={option.value}>
+                  {option.description ? (
+                    <Tooltip content={option.description} position='right'>
+                      <span className='block min-w-0 truncate'>{option.label}</span>
+                    </Tooltip>
+                  ) : (
+                    <span className='block min-w-0 truncate'>{option.label}</span>
+                  )}
+                </Select.Option>
+              ))}
+            </Select>
+          </ConfigRow>
+        ) : null}
+
         {showSkills ? (
           <ConfigRow
-            label={t('settings.assistantDefaultSkillsLabel', { defaultValue: 'Default Skills' })}
+            icon={<Lightning theme='outline' size='14' />}
+            label={t('settings.assistantDefaultSkillsLabel', { defaultValue: 'Skills' })}
             hint={
               <Button
                 type='text'
                 size='mini'
-                onClick={() => navigate('/settings/capabilities?tab=skills')}
+                onClick={() => navigate('/settings/skills')}
                 data-testid='btn-open-skills-settings'
                 className='!h-auto !px-0 !text-primary-6'
               >
@@ -295,12 +359,13 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
         ) : null}
 
         <ConfigRow
-          label={t('settings.assistantDefaultMcpLabel', { defaultValue: 'Default MCP' })}
+          icon={<Toolkit theme='outline' size='14' />}
+          label={t('settings.assistantDefaultMcpLabel', { defaultValue: 'MCP' })}
           hint={
             <Button
               type='text'
               size='mini'
-              onClick={() => navigate('/settings/capabilities?tab=tools')}
+              onClick={() => navigate('/settings/tools')}
               data-testid='btn-open-mcp-settings'
               className='!h-auto !px-0 !text-primary-6'
             >

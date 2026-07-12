@@ -5,6 +5,7 @@
  */
 
 import path from 'path';
+import { rmSync } from 'fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,15 +66,15 @@ vi.mock('electron-log', () => ({
   },
 }));
 
+const setPlatform = (platform: NodeJS.Platform): void => {
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    value: platform,
+  });
+};
+
 describe('AutoUpdaterService', () => {
   const originalPlatform = process.platform;
-
-  const setPlatform = (platform: NodeJS.Platform): void => {
-    Object.defineProperty(process, 'platform', {
-      configurable: true,
-      value: platform,
-    });
-  };
 
   beforeEach(() => {
     vi.resetModules();
@@ -86,6 +87,7 @@ describe('AutoUpdaterService', () => {
     autoUpdaterMock.allowPrerelease = false;
     autoUpdaterMock.allowDowngrade = false;
     autoUpdaterMock.channel = undefined;
+    appMock.getPath.mockImplementation(() => '/tmp/aionui-test');
     delete (autoUpdaterMock as { updateInfoAndProvider?: unknown }).updateInfoAndProvider;
     appMock.isPackaged = false;
     delete process.env.AIONUI_FORCE_DEV_AUTO_UPDATE;
@@ -392,7 +394,7 @@ describe('AutoUpdaterService', () => {
     await installPromise;
 
     expect(cleanup).toHaveBeenCalledTimes(1);
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(true, true);
+    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
   });
 
   it('does not quit on macOS when native updater reports readiness error first', async () => {
@@ -461,7 +463,7 @@ describe('AutoUpdaterService', () => {
     await installPromise;
 
     expect(cleanup).toHaveBeenCalledTimes(1);
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(true, true);
+    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
   });
 
   it('rejects a pending macOS install wait when a new update check starts', async () => {
@@ -539,7 +541,43 @@ describe('AutoUpdaterService', () => {
     await autoUpdaterService.quitAndInstall();
 
     expect(cleanup).toHaveBeenCalledTimes(1);
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(true, true);
+    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
     expect(nativeAutoUpdaterMock.on).not.toHaveBeenCalled();
+  });
+
+  it('uses a non-silent handoff for user-initiated Windows installs without changing app-quit installs', async () => {
+    setPlatform('win32');
+    const cleanup = vi.fn();
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+
+    autoUpdaterService.initialize();
+    autoUpdaterService.setBeforeQuitAndInstall(cleanup);
+
+    await autoUpdaterService.quitAndInstall();
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(true);
+    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
+  });
+
+  it('moves the process cwd to temp before the Windows updater handoff', async () => {
+    setPlatform('win32');
+    const tempRoot = path.join(process.env.TEMP || process.cwd(), `aionui-updater-cwd-test-${process.pid}`);
+    const expectedCwd = path.join(tempRoot, 'aionui-updater-cwd');
+    const chdir = vi.spyOn(process, 'chdir').mockImplementation(() => undefined);
+    appMock.getPath.mockImplementation((name: string) => (name === 'temp' ? tempRoot : '/tmp/aionui-test'));
+
+    try {
+      const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+      autoUpdaterService.initialize();
+
+      await autoUpdaterService.quitAndInstall();
+
+      expect(chdir).toHaveBeenCalledWith(expectedCwd);
+      expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
+    } finally {
+      chdir.mockRestore();
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });

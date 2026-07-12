@@ -1,5 +1,123 @@
 # Changelog
 
+## [2.1.33](https://github.com/iOfficeAI/AionUi/compare/v2.1.32...v2.1.33) (2026-07-11)
+
+### Desktop
+
+#### Bug Fixes
+
+- **build:** align Codex installer verifier (#3561)
+
+---
+
+## [2.1.32](https://github.com/iOfficeAI/AionUi/compare/v2.1.31...v2.1.32) (2026-07-10)
+
+### Desktop
+
+#### Bug Fixes
+
+- **i18n:** update Russian localization (#3541)
+
+#### Features
+
+- **i18n:** add French locale (#2731)
+- **guid:** move mobile home input controls into a + action sheet (#3554)
+- **team:** add manual teammate management (#3532)
+- **conversation:** rework model selector into a two-level menu (#3550)
+- **conversation:** rework message queue into a send draft box (#3547)
+
+#### Refactoring
+
+- **conversation:** fold draft box help into the mode toggle (#3553)
+
+### Core ([v0.1.45](https://github.com/iOfficeAI/AionCore/releases/tag/v0.1.45))
+
+#### Features
+
+- **ai-agent:** adapt to aionrs v0.2.2 config changes
+- **cli:** add agent-facing config and diagnose commands (#595)
+
+#### Bug Fixes
+
+- **ai-agent:** cap provider health check tokens
+- **ai-agent:** set default aionrs thinking cli args
+- **model_fetcher:** extract first key from multi-line api_key for HTTP requests (#593)
+- **runtime:** update Claude ACP package (#599)
+- **runtime:** update managed Codex ACP package (#598)
+- stop defaulting aionrs max tokens
+
+---
+
+## [2.1.31](https://github.com/iOfficeAI/AionUi/compare/v2.1.30...v2.1.31) (2026-07-08)
+
+### Desktop
+
+#### Bug Fixes
+
+- **installer:** harden Windows failure reporting and self-lock handling (#3533)
+- prepare backend startup directories (#3536)
+- **settings:** avoid Arco tooltip crash in skills page (#3535)
+
+#### Features
+
+- **feedback:** attach core diagnostics to reports (#3529)
+- **settings:** assistant editor and settings UI polish (#3528)
+
+### Core ([v0.1.44](https://github.com/iOfficeAI/AionCore/releases/tag/v0.1.44))
+
+#### Features
+
+- **agent:** use aionrs runtime env API (#586)
+- **ai-agent:** surface upstream 429 body in AgentSendError detail (#591)
+- **system:** add feedback diagnostics report (#585)
+
+#### Bug Fixes
+
+- **agent:** preserve ACP error cause detail (#581)
+- **skills:** correct aionui-config butler skill drift (2026-07) (#584)
+- use provider and model protocol to determine llm request
+
+---
+
+## [2.1.30](https://github.com/iOfficeAI/AionUi/compare/v2.1.29...v2.1.30) (2026-07-06)
+
+### Desktop
+
+#### Bug Fixes
+
+- wrong OpenAI SDK param name, throttle cleanup leak, missing alt text (#3512)
+- **installer:** harden Windows NSIS update failure handling (#3523)
+
+#### Features
+
+- **guid:** add slash command menu (#3524)
+- **assistant:** add thought level defaults to assistant UI (#3522)
+- **settings:** add inline link to model config when no image model is available
+- **settings:** default to the Agents tab when opening settings
+
+#### Refactoring
+
+- **settings:** describe skill origins per tab instead of per-card badges
+- **settings:** split skills/tools entries and unify page header paradigm
+
+#### Styling
+
+- **settings:** match agent availability filter to assistant home tabs
+
+### Core ([v0.1.43](https://github.com/iOfficeAI/AionCore/releases/tag/v0.1.43))
+
+#### Features
+
+- **assistant:** persist thought-level defaults (#574)
+
+#### Bug Fixes
+
+- **agent:** project available commands in management rows (#579)
+- **assistant:** filter generated assistants by installed agents (#578)
+- **cron:** enforce full-auto mode for scheduled tasks (#576)
+
+---
+
 ## [2.1.29](https://github.com/iOfficeAI/AionUi/compare/v2.1.28...v2.1.29) (2026-07-03)
 
 ### Desktop

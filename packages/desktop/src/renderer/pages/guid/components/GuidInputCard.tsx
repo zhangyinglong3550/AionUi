@@ -37,6 +37,7 @@ type GuidInputCardProps = {
 
   // Action row
   actionRow: React.ReactNode;
+  slashCommandMenu?: React.ReactNode;
 
   // Workspace
   workspaceDir: string;
@@ -61,6 +62,7 @@ const GuidInputCard: React.FC<GuidInputCardProps> = ({
   files,
   onRemoveFile,
   actionRow,
+  slashCommandMenu,
   workspaceDir,
   onSelectWorkspace,
   onClearWorkspace,
@@ -83,7 +85,7 @@ const GuidInputCard: React.FC<GuidInputCardProps> = ({
 
   return (
     <div
-      className={`${styles.guidInputCardWrap} guid-input-card-shell relative rd-24px flex flex-col overflow-hidden transition-all duration-200 ${isFileDragging ? 'b b-solid border-dashed guid-input-card-shell--dragging' : ''}`}
+      className={`${styles.guidInputCardWrap} guid-input-card-shell relative rd-24px flex flex-col ${slashCommandMenu ? 'overflow-visible' : 'overflow-hidden'} transition-all duration-200 ${isFileDragging ? 'b b-solid border-dashed guid-input-card-shell--dragging' : ''}`}
       style={{
         zIndex: 1,
         transition: 'box-shadow 0.25s ease',
@@ -104,7 +106,7 @@ const GuidInputCard: React.FC<GuidInputCardProps> = ({
     >
       {/* inner white card — narrower than outer wrap */}
       <div
-        className={`${styles.guidInputInner} p-12px flex flex-col bg-dialog-fill-0`}
+        className={`${styles.guidInputInner} relative p-12px flex flex-col bg-dialog-fill-0`}
         style={{
           transition: 'box-shadow 0.25s ease, border-color 0.25s ease',
           borderColor: isFileDragging ? 'rgb(var(--primary-3))' : borderColor,
@@ -135,6 +137,9 @@ const GuidInputCard: React.FC<GuidInputCardProps> = ({
         )}
         <UploadProgressBar source='sendbox' />
         {actionRow}
+        {slashCommandMenu && (
+          <div className='absolute left-0 right-0 top-[calc(100%+4px)] z-70'>{slashCommandMenu}</div>
+        )}
       </div>
       <GuidWorkspaceFootnote
         workspaceDir={workspaceDir}
