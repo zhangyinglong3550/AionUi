@@ -1,3 +1,9 @@
+> **本仓库是个人 Fork 定制版**（在官方 AionUi 上叠加 CLI 会话绑定等能力）。  
+> 定制说明请先读：**[FORK_README.md](./FORK_README.md)**。  
+> 上游官方：https://github.com/iOfficeAI/AionUi
+
+---
+
 <p align="center">
   <img src="./resources/aionui-banner-1.png" alt="AionUi - Cowork with AI Agents" width="100%">
 </p>
