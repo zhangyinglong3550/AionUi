@@ -9,6 +9,7 @@ import {
   Cat,
   Communication,
   Computer,
+  Connection,
   Earth,
   Info,
   Lightning,
@@ -66,12 +67,19 @@ export function getBuiltinSettingsNavItems(isDesktop: boolean, t: TranslateFn): 
       icon: isDesktop ? <Earth theme='outline' size='16' /> : <Communication theme='outline' size='16' />,
       path: 'webui',
     },
+    'cli-sessions': {
+      id: 'cli-sessions',
+      label: t('settings.cliSessions', { defaultValue: 'CLI 会话 / 绑定' }),
+      icon: <Connection theme='outline' size='16' />,
+      path: 'cli-sessions',
+    },
     pet: { id: 'pet', label: t('pet.desktopPet'), icon: <Cat theme='outline' size='16' />, path: 'pet' },
     system: { id: 'system', label: t('settings.system'), icon: <System theme='outline' size='16' />, path: 'system' },
     about: { id: 'about', label: t('settings.about'), icon: <Info theme='outline' size='16' />, path: 'about' },
   };
 
-  return BUILTIN_TAB_IDS.map((id) => builtinMap[id]);
+  // 必须覆盖 BUILTIN_TAB_IDS 每一项；缺映射会产生 undefined 导致设置页白屏
+  return BUILTIN_TAB_IDS.map((id) => builtinMap[id]).filter((item): item is NavItem => Boolean(item));
 }
 
 const SettingsPageWrapper: React.FC<SettingsPageWrapperProps> = ({ children, className, contentClassName }) => {
