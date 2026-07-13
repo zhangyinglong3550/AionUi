@@ -55,6 +55,7 @@ import {
   showAndFocusMainWindow,
   showOrCreateMainWindow,
 } from './process/utils/mainWindowLifecycle';
+import { StartupRecovery } from './process/utils/startupRecovery';
 import {
   loadUserWebUIConfig,
   resolveRemoteAccess,
@@ -82,6 +83,21 @@ const isE2ETestMode = process.env.AIONUI_E2E_TEST === '1';
 const skipSingleInstanceLock = isE2ETestMode || process.env.AIONUI_MULTI_INSTANCE === '1';
 const deepLinkFromArgv = process.argv.find((arg) => arg.startsWith(`${PROTOCOL_SCHEME}://`));
 const gotTheLock = skipSingleInstanceLock ? true : app.requestSingleInstanceLock({ deepLinkUrl: deepLinkFromArgv });
+
+// 启动恢复：避免「占着单例锁但界面永远不出现」的僵尸态（见 startupRecovery.ts）
+// 回调在运行时解析 isWebUIMode / createWindow，注册阶段可能尚未完成初始化。
+let startupRecovery: StartupRecovery | null = null;
+let earlyPendingShowMainWindow = false;
+
+const requestShowMainWindowSafe = (source: string): void => {
+  if (startupRecovery) {
+    startupRecovery.requestShowMainWindow(source);
+    return;
+  }
+  earlyPendingShowMainWindow = true;
+  console.log(`[AionUi:recovery] early pending show (source=${source}, recovery not ready)`);
+};
+
 if (!gotTheLock) {
   console.warn('[AionUi] Another instance is already running; current process will exit.');
   app.quit();
@@ -99,18 +115,9 @@ if (!gotTheLock) {
       return;
     }
 
-    // Skip window creation if app hasn't finished initializing
-    if (!appReadyDone) return;
-
-    if (app.isReady()) {
-      showOrCreateMainWindow({
-        mainWindow,
-        createWindow: () => {
-          console.log('[AionUi] second-instance received with no active main window, recreating main window');
-          createWindow();
-        },
-      });
-    }
+    // 未完成初始化时不再静默丢弃：记入 pending，ready 后补 show；
+    // 若最终卡死，看门狗会退出并释放单例锁。
+    requestShowMainWindowSafe('second-instance');
   });
 }
 
@@ -191,6 +198,47 @@ let isExplicitQuit = false;
 let appReadyDone = false;
 
 let mainWindow: BrowserWindow;
+
+// createWindow 在下方赋值；recovery / second-instance 通过此包装在运行时调用。
+let createWindowRef: (options?: { showOnReady?: boolean }) => void = () => {
+  console.warn('[AionUi:recovery] createWindow called before initialization');
+};
+
+startupRecovery = new StartupRecovery({
+  enableWatchdog: !isE2ETestMode && !isWebUIMode && !isResetPasswordMode && !isVersionMode,
+  isAppReadyDone: () => appReadyDone,
+  hasUsableMainWindow: () => Boolean(mainWindow && !mainWindow.isDestroyed()),
+  showOrCreateMainWindow: () => {
+    if (isWebUIMode || isResetPasswordMode) {
+      return;
+    }
+    if (!app.isReady()) {
+      console.warn('[AionUi:recovery] app not ready yet; keep pending');
+      earlyPendingShowMainWindow = true;
+      return;
+    }
+    showOrCreateMainWindow({
+      mainWindow,
+      createWindow: () => {
+        console.log('[AionUi:recovery] recreating main window');
+        createWindowRef();
+      },
+    });
+  },
+  exitToReleaseLock: (reason) => {
+    console.error(`[AionUi:recovery] exiting to release single-instance lock (reason=${reason})`);
+    app.exit(1);
+  },
+  log: (message) => console.log(message),
+});
+
+if (gotTheLock) {
+  startupRecovery.startWatchdog();
+  if (earlyPendingShowMainWindow) {
+    earlyPendingShowMainWindow = false;
+    startupRecovery.requestShowMainWindow('early-pending');
+  }
+}
 const backendManager = new BackendLifecycleManager(
   {
     version: app.getVersion(),
@@ -476,15 +524,20 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
     mainWindow.once('ready-to-show', () => {
       console.log('[AionUi] Window ready-to-show');
       showWindow();
+      startupRecovery?.markMainWindowVisible();
     });
     // Belt-and-suspenders: also show on did-finish-load in case ready-to-show already fired
     mainWindow.webContents.once('did-finish-load', () => {
       console.log('[AionUi] Renderer did-finish-load');
       showWindow();
+      startupRecovery?.markMainWindowVisible();
       scheduleBackendMigrations();
     });
     // Fallback: show window after 5s even if events don't fire (e.g. loadURL failure)
-    setTimeout(showWindow, 5000);
+    setTimeout(() => {
+      showWindow();
+      startupRecovery?.markMainWindowVisible();
+    }, 5000);
   } else if (process.platform === 'darwin' && app.dock) {
     void app.dock.hide();
   }
@@ -599,6 +652,8 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
     }
   });
 };
+// recovery / second-instance 通过 createWindowRef 在运行时调用真正的 createWindow
+createWindowRef = createWindow;
 
 const handleAppReady = async (): Promise<void> => {
   const t0 = performance.now();
@@ -848,6 +903,8 @@ const handleAppReady = async (): Promise<void> => {
     createWindow({ showOnReady: showMainWindowOnReady });
     appReadyDone = true;
     mark('createWindow');
+    // 初始化完成：取消启动看门狗，并补做 init 期间 Dock/二次启动请求的 show
+    startupRecovery?.markStartupCompleted();
 
     // Initialize desktop pet (delayed to not block main window)
     setTimeout(() => {
@@ -929,11 +986,11 @@ if (process.defaultApp) {
 app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLinkUrl(url);
-  if (isWebUIMode || isResetPasswordMode || !app.isReady()) {
+  if (isWebUIMode || isResetPasswordMode) {
     return;
   }
-  // Focus existing window so user sees the result
-  showOrCreateMainWindow({ mainWindow, createWindow });
+  // Focus existing window so user sees the result（未 ready 时由 recovery 排队）
+  requestShowMainWindowSafe('open-url');
 });
 
 // 监听 GPU 子进程崩溃，连续多次后下次启动自动关闭硬件加速（参见 ELECTRON-9A / ELECTRON-9D）。
@@ -966,18 +1023,17 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  // Skip if handleAppReady hasn't finished — it will create the window itself.
-  if (!appReadyDone) return;
-  if (!isWebUIMode && app.isReady()) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      // 从托盘恢复隐藏的窗口 / Restore hidden window from tray
-      showAndFocusMainWindow(mainWindow);
-      if (process.platform === 'darwin' && app.dock) {
-        void app.dock.show();
-      }
-    } else {
-      createWindow();
-    }
+  // 未完成初始化时改为排队 pending，避免 Dock 点击被静默吞掉（僵尸锁根因之一）。
+  if (isWebUIMode || isResetPasswordMode) {
+    return;
+  }
+  if (!appReadyDone || !app.isReady()) {
+    requestShowMainWindowSafe('activate');
+    return;
+  }
+  requestShowMainWindowSafe('activate');
+  if (process.platform === 'darwin' && app.dock) {
+    void app.dock.show();
   }
 });
 
