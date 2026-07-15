@@ -70,5 +70,26 @@ describe('buildGroupedHistory', () => {
     );
 
     expect(result.timelineSections).toEqual([]);
+    expect(result.archivedConversations).toEqual([]);
+  });
+
+  it('moves archived conversations out of pin/recents into archivedConversations', () => {
+    const result = buildGroupedHistory(
+      [
+        conversation('active', { backend: 'aioncore' }, 200),
+        conversation('archived-pinned', { backend: 'aioncore', pinned: true, archived: true, archived_at: 50 }, 150),
+        conversation('archived-only', { backend: 'aioncore', archived: true, archived_at: 80 }, 100),
+      ],
+      t
+    );
+
+    expect(result.pinnedConversations).toEqual([]);
+    expect(result.timelineSections[0]?.items).toEqual([
+      expect.objectContaining({
+        type: 'conversation',
+        conversation: expect.objectContaining({ id: 'active' }),
+      }),
+    ]);
+    expect(result.archivedConversations.map((c) => c.id)).toEqual(['archived-only', 'archived-pinned']);
   });
 });

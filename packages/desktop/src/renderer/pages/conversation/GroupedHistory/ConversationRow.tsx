@@ -12,7 +12,17 @@ import { resolveConversationLeadingMark } from '@/renderer/pages/conversation/ut
 import { cleanupSiderTooltips, getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { Checkbox, Dropdown, Menu, Spin, Tooltip } from '@arco-design/web-react';
-import { DeleteOne, EditOne, Export, MessageOne, MoreOne, Pushpin, Robot } from '@icon-park/react';
+import {
+  DeleteOne,
+  EditOne,
+  Export,
+  FolderDownload,
+  FolderUpload,
+  MessageOne,
+  MoreOne,
+  Pushpin,
+  Robot,
+} from '@icon-park/react';
 import classNames from 'classnames';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,7 +55,10 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
     onDelete,
     onExport,
     onTogglePin,
+    onArchive,
+    onUnarchive,
     getJobStatus,
+    archivedView = false,
   } = props;
   const { t } = useTranslation();
   const { info: assistantInfo } = usePresetAssistantInfo(conversation);
@@ -221,17 +234,27 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
                       onExport?.(conversation);
                       return;
                     }
+                    if (key === 'archive') {
+                      onArchive?.(conversation);
+                      return;
+                    }
+                    if (key === 'unarchive') {
+                      onUnarchive?.(conversation);
+                      return;
+                    }
                     if (key === 'delete') {
                       onDelete(conversation.id);
                     }
                   }}
                 >
-                  <Menu.Item key='pin'>
-                    <div className='flex items-center gap-8px'>
-                      <Pushpin theme='outline' size='14' />
-                      <span>{isPinned ? t('conversation.history.unpin') : t('conversation.history.pin')}</span>
-                    </div>
-                  </Menu.Item>
+                  {!archivedView && (
+                    <Menu.Item key='pin'>
+                      <div className='flex items-center gap-8px'>
+                        <Pushpin theme='outline' size='14' />
+                        <span>{isPinned ? t('conversation.history.unpin') : t('conversation.history.pin')}</span>
+                      </div>
+                    </Menu.Item>
+                  )}
                   <Menu.Item key='rename'>
                     <div className='flex items-center gap-8px'>
                       <EditOne theme='outline' size='14' />
@@ -246,10 +269,31 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
                       </div>
                     </Menu.Item>
                   )}
+                  {archivedView
+                    ? onUnarchive && (
+                        <Menu.Item key='unarchive'>
+                          <div className='flex items-center gap-8px'>
+                            <FolderUpload theme='outline' size='14' />
+                            <span>{t('conversation.history.unarchive')}</span>
+                          </div>
+                        </Menu.Item>
+                      )
+                    : onArchive && (
+                        <Menu.Item key='archive'>
+                          <div className='flex items-center gap-8px'>
+                            <FolderDownload theme='outline' size='14' />
+                            <span>{t('conversation.history.archive')}</span>
+                          </div>
+                        </Menu.Item>
+                      )}
                   <Menu.Item key='delete'>
                     <div className='flex items-center gap-8px text-[rgb(var(--warning-6))]'>
                       <DeleteOne theme='outline' size='14' />
-                      <span>{t('conversation.history.deleteTitle')}</span>
+                      <span>
+                        {archivedView
+                          ? t('conversation.history.deleteForever')
+                          : t('conversation.history.deleteTitle')}
+                      </span>
                     </div>
                   </Menu.Item>
                 </Menu>

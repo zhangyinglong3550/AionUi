@@ -50,6 +50,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     hasCompletionUnread,
     expandedWorkspaces,
     pinnedConversations,
+    archivedConversations,
     timelineSections,
     handleToggleWorkspace,
     collapsedSections,
@@ -111,10 +112,13 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     handleConversationClick,
     handleDeleteClick,
     handleBatchDelete,
+    handleBatchArchive,
     handleEditStart,
     handleRenameConfirm,
     handleRenameCancel,
     handleTogglePin,
+    handleArchiveClick,
+    handleUnarchiveClick,
     handleMenuVisibleChange,
     handleOpenMenu,
     handleRemoveProject,
@@ -161,7 +165,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     });
 
   const getConversationRowProps = useCallback(
-    (conversation: TChatConversation): ConversationRowProps => ({
+    (conversation: TChatConversation, archivedView = false): ConversationRowProps => ({
       conversation,
       isGenerating: isConversationGenerating(conversation.id),
       hasCompletionUnread: hasCompletionUnread(conversation.id),
@@ -182,7 +186,10 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       // underlying handleExportConversation logic from useExport is kept for a
       // future per-platform re-enable.
       onTogglePin: handleTogglePin,
+      onArchive: handleArchiveClick,
+      onUnarchive: handleUnarchiveClick,
       getJobStatus,
+      archivedView,
     }),
     [
       collapsed,
@@ -200,12 +207,14 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       handleEditStart,
       handleDeleteClick,
       handleTogglePin,
+      handleArchiveClick,
+      handleUnarchiveClick,
       getJobStatus,
     ]
   );
 
-  const renderConversation = (conversation: TChatConversation, dimIcon = false) => {
-    const rowProps = getConversationRowProps(conversation);
+  const renderConversation = (conversation: TChatConversation, dimIcon = false, archivedView = false) => {
+    const rowProps = getConversationRowProps(conversation, archivedView);
     return <ConversationRow key={conversation.id} {...rowProps} dimIcon={dimIcon} />;
   };
 
@@ -244,7 +253,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     [timelineSections]
   );
 
-  if (timelineSections.length === 0 && pinnedConversations.length === 0) {
+  if (timelineSections.length === 0 && pinnedConversations.length === 0 && archivedConversations.length === 0) {
     return (
       <>
         {afterPinnedContent}
@@ -388,7 +397,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
             {/* Batch export UI entry intentionally disabled (kanban #14): the
                 button is removed so select-all + delete share the two columns.
                 handleBatchExport from useExport is kept for a future re-enable. */}
-            <div className='grid grid-cols-2 gap-6px'>
+            <div className='grid grid-cols-3 gap-6px'>
               <Button
                 className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap'
                 size='mini'
@@ -396,6 +405,14 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
                 onClick={handleToggleSelectAll}
               >
                 {allSelected ? t('common.cancel') : t('conversation.history.selectAll')}
+              </Button>
+              <Button
+                className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap'
+                size='mini'
+                type='secondary'
+                onClick={handleBatchArchive}
+              >
+                {t('conversation.history.batchArchive')}
               </Button>
               <Button
                 className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap'
@@ -625,6 +642,23 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
                   )}
                 </div>
               ))}
+          </div>
+        )}
+
+        {/* L1: Archive — soft-deleted chats; restore or permanently delete */}
+        {archivedConversations.length > 0 && (
+          <div className='min-w-0'>
+            {!collapsed && (
+              <SectionLabel
+                sectionKey='archived'
+                label={`${t('conversation.history.archivedSection')} (${archivedConversations.length})`}
+              />
+            )}
+            {!collapsedSections.has('archived') && (
+              <div className='min-w-0'>
+                {archivedConversations.map((conversation) => renderConversation(conversation, false, true))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -21,24 +21,27 @@ const COLLAPSED_SECTIONS_KEY = 'grouped-history-collapsed-sections';
 const readCollapsedSections = (): Set<string> => {
   try {
     const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
-    if (!raw) return new Set();
+    // Default: collapse Archive so the main list stays clean
+    if (!raw) return new Set(['archived']);
     const arr = JSON.parse(raw) as string[];
-    return new Set(Array.isArray(arr) ? arr : []);
+    return new Set(Array.isArray(arr) ? arr : ['archived']);
   } catch {
-    return new Set();
+    return new Set(['archived']);
   }
 };
 
 // Where an active conversation lives, so we can expand the right containers
 // before scrolling it into view.
-type ConversationLocation = { section: 'pinned' | 'projects' | 'conversations'; workspace?: string };
+type ConversationLocation = { section: 'pinned' | 'projects' | 'conversations' | 'archived'; workspace?: string };
 
 const locateConversation = (
   id: string,
   pinned: TChatConversation[],
-  sections: TimelineSection[]
+  sections: TimelineSection[],
+  archived: TChatConversation[] = []
 ): ConversationLocation | null => {
   if (pinned.some((c) => c.id === id)) return { section: 'pinned' };
+  if (archived.some((c) => c.id === id)) return { section: 'archived' };
   for (const section of sections) {
     for (const item of section.items) {
       if (item.type === 'workspace' && item.workspaceGroup) {
@@ -66,7 +69,7 @@ export const useConversations = () => {
     groupedHistory,
   } = useConversationHistoryContext();
 
-  const { pinnedConversations, timelineSections } = groupedHistory;
+  const { pinnedConversations, timelineSections, archivedConversations } = groupedHistory;
 
   // Track whether auto-expand has already been performed to avoid
   // re-expanding workspaces after a user manually collapses them (#1156)
@@ -103,7 +106,7 @@ export const useConversations = () => {
 
     if (revealedIdRef.current === id) return;
 
-    const location = locateConversation(id, pinnedConversations, timelineSections);
+    const location = locateConversation(id, pinnedConversations, timelineSections, archivedConversations);
     if (!location) return; // data not loaded yet; effect re-runs when it arrives
     revealedIdRef.current = id;
 
@@ -137,7 +140,7 @@ export const useConversations = () => {
       cancelAnimationFrame(outerRafId);
       cancelAnimationFrame(innerRafId);
     };
-  }, [clearCompletionUnread, id, setActiveConversation, pinnedConversations, timelineSections]);
+  }, [clearCompletionUnread, id, setActiveConversation, pinnedConversations, timelineSections, archivedConversations]);
 
   // Persist workspace expansion state
   useEffect(() => {
@@ -212,6 +215,7 @@ export const useConversations = () => {
     hasCompletionUnread,
     expandedWorkspaces,
     pinnedConversations,
+    archivedConversations,
     timelineSections,
     handleToggleWorkspace,
     collapsedSections,

@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { isConversationPinned } from '../utils/groupingHelpers';
+import { isConversationArchived, isConversationPinned } from '../utils/groupingHelpers';
 
 type UseConversationActionsParams = {
   batchMode: boolean;
@@ -223,6 +223,127 @@ export const useConversationActions = ({
     [t]
   );
 
+  const setArchivedState = useCallback(
+    async (conversation: TChatConversation, archived: boolean): Promise<boolean> => {
+      try {
+        const success = await ipcBridge.conversation.update.invoke({
+          id: conversation.id,
+          updates: {
+            extra: {
+              archived,
+              // null clears archived_at on unarchive (undefined is stripped from JSON)
+              archived_at: archived ? Date.now() : null,
+              // Leave pin section when archiving so it only appears under Archive
+              ...(archived ? { pinned: false, pinned_at: null } : {}),
+            } as Partial<TChatConversation['extra']>,
+          } as Partial<TChatConversation>,
+          merge_extra: true,
+        });
+        if (!success) {
+          return false;
+        }
+        await refreshConversationCache(conversation.id);
+        emitter.emit('chat.history.refresh');
+        return true;
+      } catch (error) {
+        console.error('Failed to update conversation archive state:', error);
+        return false;
+      }
+    },
+    []
+  );
+
+  const handleArchiveClick = useCallback(
+    async (conversation: TChatConversation) => {
+      if (isConversationArchived(conversation)) {
+        return;
+      }
+      const success = await setArchivedState(conversation, true);
+      if (success) {
+        Message.success(t('conversation.history.archiveSuccess'));
+        if (id === conversation.id) {
+          void navigate('/');
+        }
+      } else {
+        Message.error(t('conversation.history.archiveFailed'));
+      }
+    },
+    [id, navigate, setArchivedState, t]
+  );
+
+  const handleUnarchiveClick = useCallback(
+    async (conversation: TChatConversation) => {
+      if (!isConversationArchived(conversation)) {
+        return;
+      }
+      const success = await setArchivedState(conversation, false);
+      if (success) {
+        Message.success(t('conversation.history.unarchiveSuccess'));
+      } else {
+        Message.error(t('conversation.history.unarchiveFailed'));
+      }
+    },
+    [setArchivedState, t]
+  );
+
+  const handleBatchArchive = useCallback(() => {
+    if (selectedConversationIds.size === 0) {
+      Message.warning(t('conversation.history.batchNoSelection'));
+      return;
+    }
+
+    Modal.confirm({
+      title: t('conversation.history.batchArchive'),
+      content: t('conversation.history.batchArchiveConfirm', { count: selectedConversationIds.size }),
+      okText: t('conversation.history.archive'),
+      cancelText: t('conversation.history.cancelDelete'),
+      onOk: async () => {
+        const selectedIds = Array.from(selectedConversationIds);
+        try {
+          const results = await Promise.all(
+            selectedIds.map(async (conversation_id) => {
+              const success = await ipcBridge.conversation.update.invoke({
+                id: conversation_id,
+                updates: {
+                  extra: {
+                    archived: true,
+                    archived_at: Date.now(),
+                    pinned: false,
+                    pinned_at: null,
+                  } as Partial<TChatConversation['extra']>,
+                } as Partial<TChatConversation>,
+                merge_extra: true,
+              });
+              if (success) {
+                await refreshConversationCache(conversation_id);
+              }
+              return success;
+            })
+          );
+          const successCount = results.filter(Boolean).length;
+          emitter.emit('chat.history.refresh');
+          if (successCount > 0) {
+            Message.success(t('conversation.history.batchArchiveSuccess', { count: successCount }));
+            if (id && selectedIds.includes(id)) {
+              void navigate('/');
+            }
+          } else {
+            Message.error(t('conversation.history.archiveFailed'));
+          }
+        } catch (error) {
+          console.error('Failed to batch archive conversations:', error);
+          Message.error(t('conversation.history.archiveFailed'));
+        } finally {
+          setSelectedConversationIds(new Set());
+          onBatchModeChange?.(false);
+        }
+      },
+      style: { borderRadius: '12px' },
+      alignCenter: true,
+      getPopupContainer: () => document.body,
+    });
+  }, [id, navigate, onBatchModeChange, selectedConversationIds, setSelectedConversationIds, t]);
+
   const handleMenuVisibleChange = useCallback((conversation_id: string, visible: boolean) => {
     setDropdownVisibleId(visible ? conversation_id : null);
   }, []);
@@ -285,10 +406,13 @@ export const useConversationActions = ({
     handleConversationClick,
     handleDeleteClick,
     handleBatchDelete,
+    handleBatchArchive,
     handleEditStart,
     handleRenameConfirm,
     handleRenameCancel,
     handleTogglePin,
+    handleArchiveClick,
+    handleUnarchiveClick,
     handleMenuVisibleChange,
     handleOpenMenu,
     handleRemoveProject,

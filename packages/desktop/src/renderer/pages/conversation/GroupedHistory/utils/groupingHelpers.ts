@@ -25,6 +25,20 @@ export const getConversationPinnedAt = (conversation: TChatConversation): number
   return 0;
 };
 
+/** Soft-archive flag stored in conversation.extra (same persistence path as pin). */
+export const isConversationArchived = (conversation: TChatConversation): boolean => {
+  const extra = conversation.extra as { archived?: boolean } | undefined;
+  return Boolean(extra?.archived);
+};
+
+export const getConversationArchivedAt = (conversation: TChatConversation): number => {
+  const extra = conversation.extra as { archived_at?: number } | undefined;
+  if (typeof extra?.archived_at === 'number') {
+    return extra.archived_at;
+  }
+  return 0;
+};
+
 export const groupConversationsByWorkspace = (
   conversations: TChatConversation[],
   t: (key: string) => string
@@ -101,7 +115,14 @@ export const buildGroupedHistory = (
   // Filter out team-owned conversations; they are only visible via the Teams panel
   const visibleConversations = conversations.filter((conv) => !isTeamConversation(conv));
 
-  const pinnedConversations = visibleConversations
+  const archivedConversations = visibleConversations
+    .filter((conversation) => isConversationArchived(conversation))
+    .toSorted((a, b) => getConversationArchivedAt(b) - getConversationArchivedAt(a) || getActivityTime(b) - getActivityTime(a));
+
+  // Active list excludes archived (pin / project / recents)
+  const activeConversations = visibleConversations.filter((conversation) => !isConversationArchived(conversation));
+
+  const pinnedConversations = activeConversations
     .filter((conversation) => isConversationPinned(conversation))
     .toSorted((a, b) => {
       const orderA = getConversationSortOrder(a);
@@ -112,10 +133,11 @@ export const buildGroupedHistory = (
       return getConversationPinnedAt(b) - getConversationPinnedAt(a);
     });
 
-  const normalConversations = visibleConversations.filter((conversation) => !isConversationPinned(conversation));
+  const normalConversations = activeConversations.filter((conversation) => !isConversationPinned(conversation));
 
   return {
     pinnedConversations,
+    archivedConversations,
     timelineSections: groupConversationsByWorkspace(normalConversations, t),
   };
 };

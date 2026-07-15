@@ -27,6 +27,8 @@ export type TimelineSection = {
 
 export type GroupedHistoryResult = {
   pinnedConversations: TChatConversation[];
+  /** Soft-archived conversations (hidden from pin/project/recents, shown in Archive section). */
+  archivedConversations: TChatConversation[];
   timelineSections: TimelineSection[];
 };
 
@@ -59,9 +61,13 @@ export type ConversationRowProps = {
   onDelete: (conversation_id: string) => void;
   onExport?: (conversation: TChatConversation) => void;
   onTogglePin: (conversation: TChatConversation) => void;
+  onArchive?: (conversation: TChatConversation) => void;
+  onUnarchive?: (conversation: TChatConversation) => void;
   getJobStatus: (conversation_id: string) => 'none' | 'active' | 'paused' | 'error' | 'unread';
   /** When true, the agent icon is dimmed by default and only shows full color on hover. Used inside project folders to reduce visual weight. */
   dimIcon?: boolean;
+  /** Row rendered inside the Archive section (menu shows Unarchive instead of Archive/Pin). */
+  archivedView?: boolean;
 };
 
 export type WorkspaceGroupedHistoryProps = {
