@@ -56,6 +56,8 @@ import {
   showOrCreateMainWindow,
 } from './process/utils/mainWindowLifecycle';
 import { StartupRecovery } from './process/utils/startupRecovery';
+import { startDetachedStartupWatchdog } from './process/utils/detachedStartupWatchdog';
+import { clearStaleMigrateLock } from './process/utils/staleLockCleanup';
 import {
   loadUserWebUIConfig,
   resolveRemoteAccess,
@@ -87,6 +89,8 @@ const gotTheLock = skipSingleInstanceLock ? true : app.requestSingleInstanceLock
 // 启动恢复：避免「占着单例锁但界面永远不出现」的僵尸态（见 startupRecovery.ts）
 // 回调在运行时解析 isWebUIMode / createWindow，注册阶段可能尚未完成初始化。
 let startupRecovery: StartupRecovery | null = null;
+/** 独立 OS 进程看门狗：主线程卡死时仍能杀进程释放单例锁 */
+let detachedStartupWatchdog: ReturnType<typeof startDetachedStartupWatchdog> | null = null;
 let earlyPendingShowMainWindow = false;
 
 const requestShowMainWindowSafe = (source: string): void => {
@@ -102,6 +106,32 @@ if (!gotTheLock) {
   console.warn('[AionUi] Another instance is already running; current process will exit.');
   app.quit();
 } else {
+  // 尽早 fork OS 级看门狗：必须在 fixPath() / 后续同步 bootstrap 之前。
+  // 已验证僵尸日志常停在 auto-update CDN 配置之后、detached-watchdog started 之前，
+  // 说明卡死点可能在 fixPath 或中间模块求值；看门狗若放后面则永远起不来。
+  // 此处 argv 标志即可判断，不依赖下方 isWebUIMode 常量。
+  const earlySkipDetachedWatchdog =
+    isE2ETestMode ||
+    process.argv.includes('--webui') ||
+    app.commandLine.hasSwitch('webui') ||
+    process.argv.includes('--resetpass') ||
+    process.argv.includes('--version') ||
+    process.argv.includes('-v');
+  if (!earlySkipDetachedWatchdog) {
+    try {
+      // userData 在 app ready 前即可解析；清残留 migrate.lock 避免二次启动互锁
+      clearStaleMigrateLock(app.getPath('userData'));
+    } catch (error) {
+      console.warn('[AionUi:locks] early clearStaleMigrateLock failed:', error);
+    }
+    detachedStartupWatchdog = startDetachedStartupWatchdog({
+      enabled: true,
+      // 略短于系统看门狗 35s 门槛，优先 App 自愈释放单例锁
+      timeoutMs: 50_000,
+      log: (message) => console.log(message),
+    });
+  }
+
   app.on('second-instance', (_event, argv, _workingDirectory, additionalData) => {
     // Prefer additionalData (reliable on all platforms), fallback to argv scan
     const deepLinkUrl =
@@ -237,6 +267,22 @@ if (gotTheLock) {
   if (earlyPendingShowMainWindow) {
     earlyPendingShowMainWindow = false;
     startupRecovery.requestShowMainWindow('early-pending');
+  }
+
+  // detached OS 看门狗已在拿到单例锁后立刻启动；此处仅兜底（例如测试开关变化）。
+  const enableDetachedWatchdog =
+    !isE2ETestMode && !isWebUIMode && !isResetPasswordMode && !isVersionMode;
+  if (enableDetachedWatchdog && !detachedStartupWatchdog) {
+    try {
+      clearStaleMigrateLock(app.getPath('userData'));
+    } catch (error) {
+      console.warn('[AionUi:locks] clearStaleMigrateLock failed:', error);
+    }
+    detachedStartupWatchdog = startDetachedStartupWatchdog({
+      enabled: true,
+      timeoutMs: 50_000,
+      log: (message) => console.log(message),
+    });
   }
 }
 const backendManager = new BackendLifecycleManager(
@@ -525,18 +571,21 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       console.log('[AionUi] Window ready-to-show');
       showWindow();
       startupRecovery?.markMainWindowVisible();
+      detachedStartupWatchdog?.markReady();
     });
     // Belt-and-suspenders: also show on did-finish-load in case ready-to-show already fired
     mainWindow.webContents.once('did-finish-load', () => {
       console.log('[AionUi] Renderer did-finish-load');
       showWindow();
       startupRecovery?.markMainWindowVisible();
+      detachedStartupWatchdog?.markReady();
       scheduleBackendMigrations();
     });
     // Fallback: show window after 5s even if events don't fire (e.g. loadURL failure)
     setTimeout(() => {
       showWindow();
       startupRecovery?.markMainWindowVisible();
+      detachedStartupWatchdog?.markReady();
     }, 5000);
   } else if (process.platform === 'darwin' && app.dock) {
     void app.dock.hide();
@@ -905,6 +954,8 @@ const handleAppReady = async (): Promise<void> => {
     mark('createWindow');
     // 初始化完成：取消启动看门狗，并补做 init 期间 Dock/二次启动请求的 show
     startupRecovery?.markStartupCompleted();
+    // 通知独立 OS 看门狗：启动已完成，勿杀主进程
+    detachedStartupWatchdog?.markReady();
 
     // Initialize desktop pet (delayed to not block main window)
     setTimeout(() => {
