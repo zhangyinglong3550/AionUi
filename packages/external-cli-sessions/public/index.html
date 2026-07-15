@@ -183,12 +183,9 @@
             `;
             const actions = el.querySelector('.actions');
             if (s.aionui.canOpenInAionUi && s.aionui.openUrl) {
-              const a = document.createElement('a');
-              a.href = s.aionui.openUrl;
-              a.target = '_blank';
-              a.rel = 'noopener';
-              a.textContent = '打开 AionUi 对话';
-              actions.appendChild(a);
+              actions.appendChild(
+                makeOpenButton('打开 AionUi 对话', s.aionui.openUrl, s.aionui.conversationId)
+              );
             } else if (s.canBind) {
               const bindBtn = document.createElement('button');
               bindBtn.textContent = '绑定到 AionUi（共享）';
@@ -216,12 +213,8 @@
                   const open = bj.data.openUrl;
                   bindBtn.textContent = '已绑定';
                   if (open) {
-                    const a = document.createElement('a');
-                    a.href = open;
-                    a.target = '_blank';
-                    a.rel = 'noopener';
-                    a.textContent = '打开 AionUi 对话';
-                    actions.insertBefore(a, bindBtn);
+                    const openBtn = makeOpenButton('打开 AionUi 对话', open, bj.data.conversationId);
+                    actions.insertBefore(openBtn, bindBtn);
                   }
                   setTimeout(load, 800);
                 } catch (e) {
@@ -256,6 +249,34 @@
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;');
+      }
+
+      /** 在 AionUi Mac App 的 iframe 内：直接让父窗口跳转，避免打开失效的 Tailscale URL */
+      function openInAionUi(openUrl, conversationId) {
+        if (conversationId) {
+          try {
+            if (window.parent && window.parent !== window) {
+              const p = window.parent.location;
+              if (p && (p.hostname === '127.0.0.1' || p.hostname === 'localhost')) {
+                p.hash = `#/conversation/${conversationId}`;
+                return;
+              }
+            }
+          } catch {
+            /* cross-origin */
+          }
+        }
+        if (openUrl) window.open(openUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      function makeOpenButton(label, openUrl, conversationId) {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.onclick = (e) => {
+          e.preventDefault();
+          openInAionUi(openUrl, conversationId);
+        };
+        return btn;
       }
 
       document.getElementById('reload').onclick = load;

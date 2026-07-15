@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { scanAllSessions, resumeCommand } from './scan.js';
 import { loadAionUiSessionIndex, enrichWithAionUi } from './match-aionui.js';
 import { bindExternalSession } from './bind.js';
+import { resolveWebuiBase } from './discover-webui.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -63,14 +64,12 @@ function authOk(req, url, token) {
 export function startServer(opts = {}) {
   const host = opts.host || '127.0.0.1';
   const port = opts.port || 18765;
-  const webuiBase = (opts.webuiBase || process.env.AIONUI_WEBUI_BASE || 'http://127.0.0.1:25808').replace(
-    /\/$/,
-    ''
-  );
+  const defaultWebuiBase = resolveWebuiBase(undefined, { fallback: opts.webuiBase });
   const token = opts.token || process.env.EXTERNAL_SESSIONS_TOKEN || crypto.randomBytes(12).toString('hex');
 
   const server = http.createServer((req, res) => {
     const url = parseQuery(req.url || '/');
+    const webuiBase = resolveWebuiBase(req, { fallback: opts.webuiBase });
     if (!authOk(req, url, token)) {
       return json(res, 401, { error: 'unauthorized', hint: 'pass ?token=...' });
     }
@@ -122,6 +121,7 @@ export function startServer(opts = {}) {
             cwd: body.cwd,
             title: body.title || body.preview,
             force: !!body.force,
+            webuiBase,
           });
           json(res, 200, { success: true, data: result });
         })
@@ -139,7 +139,7 @@ export function startServer(opts = {}) {
       const base = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
       console.log(`[external-cli-sessions] listening on http://${host}:${port}`);
       console.log(`[external-cli-sessions] open ${base}/?token=${token}`);
-      console.log(`[external-cli-sessions] AionUi WebUI base: ${webuiBase}`);
+      console.log(`[external-cli-sessions] AionUi WebUI base (default): ${defaultWebuiBase}`);
       console.log(`[external-cli-sessions] token: ${token}`);
       resolve(server);
     });

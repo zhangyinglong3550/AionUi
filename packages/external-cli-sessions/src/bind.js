@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadAionUiSessionIndex } from './match-aionui.js';
+import { discoverLocalWebuiBase } from './discover-webui.js';
 
 const AGENT = {
   codex: {
@@ -110,8 +111,9 @@ function aionBase() {
   return discoverAionBase();
 }
 
-function webuiBase() {
-  return (process.env.AIONUI_WEBUI_BASE || 'http://127.0.0.1:25808').replace(/\/$/, '');
+function webuiBase(override) {
+  if (override) return String(override).replace(/\/$/, '');
+  return discoverLocalWebuiBase();
 }
 
 async function httpJson(method, urlPath, body) {
@@ -200,7 +202,7 @@ export async function bindExternalSession(input) {
       alreadyBound: true,
       conversationId: existing.conversationId,
       sessionId,
-      openUrl: `${webuiBase()}/#/conversation/${existing.conversationId}`,
+      openUrl: `${webuiBase(input.webuiBase)}/#/conversation/${existing.conversationId}`,
       mode: 'shared',
       note: 'Already bound to an AionUi conversation (same session_id).',
     };
@@ -270,7 +272,7 @@ export async function bindExternalSession(input) {
     alreadyBound: false,
     conversationId,
     sessionId,
-    openUrl: `${webuiBase()}/#/conversation/${conversationId}`,
+    openUrl: `${webuiBase(input.webuiBase)}/#/conversation/${conversationId}`,
     mode: 'shared',
     workspace,
     source,
