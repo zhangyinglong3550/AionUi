@@ -50,6 +50,7 @@ import { Message, Tag } from '@arco-design/web-react';
 import { Brain, MagicHat, Shield } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { classifyConversationBusyError } from '../conversationBusyError';
 import { useAionrsMessage } from './useAionrsMessage';
 import type { AionrsModelSelection } from './useAionrsModelSelection';
 
@@ -151,6 +152,7 @@ const AionrsSendBox: React.FC<{
     },
   });
   const runtimeView = useConversationRuntimeView(conversation_id);
+  const { markSendStarted, markSendAccepted, markSendFailed } = runtimeView;
 
   const { atPath, uploadFile, setAtPath, setUploadFile, content, setContent } = useSendBoxDraft(conversation_id);
 
@@ -272,7 +274,7 @@ const AionrsSendBox: React.FC<{
           return;
         }
 
-        runtimeView.markSendStarted();
+        markSendStarted();
         setWaitingResponse(true);
         const res = await ipcBridge.conversation.sendMessage.invoke({
           input: displayMessage,
@@ -280,7 +282,7 @@ const AionrsSendBox: React.FC<{
           files,
         });
         setActiveMsgId(res.msg_id);
-        runtimeView.markSendAccepted(res.turn_id, res.runtime, res.msg_id);
+        markSendAccepted(res.turn_id, res.runtime, res.msg_id);
         emitter.emit('chat.history.refresh');
         if (files.length > 0) {
           emitter.emit('aionrs.workspace.refresh');
@@ -289,7 +291,19 @@ const AionrsSendBox: React.FC<{
         const errorMessage =
           getConversationRuntimeWorkspaceErrorMessage(error, t) ||
           (error instanceof Error ? error.message : String(error));
-        runtimeView.markSendFailed(errorMessage);
+        const busyError = classifyConversationBusyError(error);
+        if (busyError) {
+          markSendFailed({
+            kind: 'busy_conflict',
+            reason: errorMessage,
+            busyKind: busyError.kind,
+            status: busyError.status,
+            code: busyError.code,
+          });
+          throw error;
+        }
+
+        markSendFailed({ kind: 'ordinary', reason: errorMessage });
         Message.error(errorMessage);
         throw error;
       }
@@ -298,7 +312,9 @@ const AionrsSendBox: React.FC<{
       checkAndUpdateTitle,
       conversation_id,
       current_model?.use_model,
-      runtimeView,
+      markSendAccepted,
+      markSendFailed,
+      markSendStarted,
       setActiveMsgId,
       setWaitingResponse,
       t,
@@ -315,6 +331,7 @@ const AionrsSendBox: React.FC<{
     hasPendingCommands,
     enqueue,
     remove,
+    prioritize,
     sendNow,
     clear,
     reorder,
@@ -618,11 +635,15 @@ const AionrsSendBox: React.FC<{
   const effectiveHandleStop = teamRuntime?.onStop ?? handleStop;
   const handleSendNowQueued = useCallback(
     async (item: ConversationCommandQueueItem) => {
-      // Interrupt the current reply (best-effort; no-op when idle), then dequeue this one immediately.
+      // Stop the current reply (best-effort), then promote the chosen command
+      // to the front of the queue in auto mode.  The drain effect will fire it
+      // once the execution gate shows canExecute — avoiding the 409 race that
+      // occurs when sendNow() calls onExecute() directly before the backend
+      // has finished processing the stop.
       await effectiveHandleStop();
-      sendNow(item.id);
+      prioritize(item.id);
     },
-    [effectiveHandleStop, sendNow]
+    [effectiveHandleStop, prioritize]
   );
   const sendBoxWidthClass = getChatSurfaceWidthClass(Boolean(teamPermission));
 

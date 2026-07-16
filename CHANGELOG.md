@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.1.35](https://github.com/iOfficeAI/AionUi/compare/v2.1.34...v2.1.35) (2026-07-14)
+
+### Desktop
+
+#### Bug Fixes
+
+- **renderer:** restrict message file marker parsing (#3590)
+- **conversation:** handle busy send conflicts (#3589)
+- **packaging:** verify bundled resources from manifest (#3587)
+- **feedback:** attach team route context
+- **startup:** classify assistant bootstrap failures (#3583)
+
+### Core ([v0.1.47](https://github.com/iOfficeAI/AionCore/releases/tag/v0.1.47))
+
+#### Features
+
+- **cron:** deduplicate and protect scheduled executions (#601)
+- **diagnostics:** expand feedback runtime evidence (#612)
+
+#### Bug Fixes
+
+- **assistant:** skip dirty assistant bootstrap records (#615)
+- **managed-resources:** emit bundled resource manifest (#617)
+
+---
+
+## [2.1.34](https://github.com/iOfficeAI/AionUi/compare/v2.1.33...v2.1.34) (2026-07-13)
+
+### Desktop
+
+#### Bug Fixes
+
+- **team:** show accepted team work as processing (#3576)
+- **conversation:** prevent queue drain from racing backend idle state (#3571)
+
+### Core ([v0.1.46](https://github.com/iOfficeAI/AionCore/releases/tag/v0.1.46))
+
+#### Bug Fixes
+
+- **acp:** normalize Codex full-access mode (#608)
+- **butler:** correct three breaking field mismatches + update rule to CLI model (#607)
+
+---
+
 ## [2.1.33](https://github.com/iOfficeAI/AionUi/compare/v2.1.32...v2.1.33) (2026-07-11)
 
 ### Desktop
